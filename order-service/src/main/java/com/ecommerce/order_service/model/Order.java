@@ -27,6 +27,9 @@ public class Order {
     @Column(nullable = false)
     private Long userId;
 
+    @Column(unique = true, nullable = false, length = 255)
+    private String idempotencyKey;
+
     @Column(nullable = false)
     private String orderNumber;
 

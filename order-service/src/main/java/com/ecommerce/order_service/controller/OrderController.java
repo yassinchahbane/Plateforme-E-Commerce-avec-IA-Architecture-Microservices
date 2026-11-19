@@ -2,6 +2,7 @@ package com.ecommerce.order_service.controller;
 
 import com.ecommerce.order_service.dto.OrderRequest;
 import com.ecommerce.order_service.dto.OrderResponse;
+import com.ecommerce.order_service.dto.OrderDetailResponse;
 import com.ecommerce.order_service.model.Order;
 import com.ecommerce.order_service.service.OrderService;
 import jakarta.validation.Valid;
@@ -22,10 +23,17 @@ public class OrderController {
     private final OrderService orderService;
 
     @PostMapping
-    public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody OrderRequest orderRequest) {
+    public ResponseEntity<OrderResponse> createOrder(
+            @Valid @RequestBody OrderRequest orderRequest,
+            @RequestHeader("Idempotency-Key") String idempotencyKey) {
         log.info("Received request to create order for user: {}", orderRequest.getUserId());
-        OrderResponse createdOrder = orderService.createOrder(orderRequest);
+        OrderResponse createdOrder = orderService.createOrder(orderRequest, idempotencyKey);
         return new ResponseEntity<>(createdOrder, HttpStatus.CREATED);
+    }
+
+    @GetMapping("/{id}/detail")
+    public ResponseEntity<OrderDetailResponse> getOrderDetail(@PathVariable Long id) {
+        return ResponseEntity.ok(orderService.getOrderDetailById(id));
     }
 
     @GetMapping("/{id}")

@@ -4,6 +4,13 @@ import com.ecommerce.order_service.dto.OrderItemRequest;
 import com.ecommerce.order_service.dto.OrderItemResponse;
 import com.ecommerce.order_service.dto.OrderRequest;
 import com.ecommerce.order_service.dto.OrderResponse;
+import com.ecommerce.order_service.dto.OrderDetailResponse;
+import com.ecommerce.order_service.dto.OrderItemDetailResponse;
+import com.ecommerce.order_service.feignclient.ProductDTO;
+import com.ecommerce.order_service.feignclient.ProductRequest;
+import com.ecommerce.order_service.feignclient.UserDto;
+import com.ecommerce.order_service.feignclient.UserRequest;
+import com.ecommerce.order_service.exception.RessourceIntrouvableException;
 import com.ecommerce.order_service.model.Order;
 import com.ecommerce.order_service.model.OrderItem;
 import com.ecommerce.order_service.repository.OrderRepository;
@@ -25,46 +32,55 @@ import java.util.stream.Collectors;
 public class OrderService {
 
     private final OrderRepository orderRepository;
-    private final ProductServiceClient productServiceClient;
+    private final ProductRequest productRequest;
+    private final UserRequest userRequest;
 
     @Transactional
-    public OrderResponse createOrder(OrderRequest orderRequest) {
+    public OrderResponse createOrder(OrderRequest orderRequest, String idempotencyKey) {
+        if (idempotencyKey == null
+                || idempotencyKey.isBlank()
+                || idempotencyKey.length() > 255) {
+            throw new IllegalArgumentException("Invalid idempotency key");
+        }
+
+        if (orderRepository.findByIdempotencyKey(idempotencyKey).isPresent()) {
+            throw new IllegalArgumentException("Operation already processed");
+        }
+
         log.info("Creating order for user: {}", orderRequest.getUserId());
 
-        // Validate products and get product details
-        List<Long> productIds = orderRequest.getOrderItems().stream()
-                .map(OrderItemRequest::getProductId)
-                .collect(Collectors.toList());
-
-        // Check if products exist and get their details
-        var productDetails = productServiceClient.getProductsByIds(productIds);
-        
-        if (productDetails.size() != productIds.size()) {
-            throw new RuntimeException("Some products not found");
-        }
+        UserDto user = userRequest.getUserById(orderRequest.getUserId());
 
         // Create order
         Order order = Order.builder()
                 .userId(orderRequest.getUserId())
                 .orderNumber(generateOrderNumber())
+                .idempotencyKey(idempotencyKey)
                 .status(Order.OrderStatus.PENDING)
                 .build();
 
         // Create order items
         List<OrderItem> orderItems = orderRequest.getOrderItems().stream()
                 .map(itemRequest -> {
-                    var product = productDetails.stream()
-                            .filter(p -> p.getId().equals(itemRequest.getProductId()))
-                            .findFirst()
-                            .orElseThrow(() -> new RuntimeException("Product not found: " + itemRequest.getProductId()));
+                    ProductDTO product = productRequest.getProductById(itemRequest.getProductId());
+
+                    if (product.getStock() == null
+                            || product.getStock() < itemRequest.getQuantity()) {
+                        throw new IllegalArgumentException(
+                                "Insufficient stock for product " + itemRequest.getProductId());
+                    }
+
+                    BigDecimal unitPrice = product.getPrice();
+                    BigDecimal totalPrice = unitPrice.multiply(
+                            BigDecimal.valueOf(itemRequest.getQuantity()));
 
                     return OrderItem.builder()
                             .order(order)
                             .productId(itemRequest.getProductId())
                             .productName(product.getName())
                             .quantity(itemRequest.getQuantity())
-                            .unitPrice(product.getPrice())
-                            .totalPrice(product.getPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity())))
+                            .unitPrice(unitPrice)
+                            .totalPrice(totalPrice)
                             .build();
                 })
                 .collect(Collectors.toList());
@@ -81,6 +97,49 @@ public class OrderService {
         
         log.info("Order created successfully with order number: {}", savedOrder.getOrderNumber());
         return convertToResponse(savedOrder);
+    }
+
+    @Transactional(readOnly = true)
+    public OrderDetailResponse getOrderDetailById(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RessourceIntrouvableException("Order not found"));
+
+        UserDto user = userRequest.getUserById(order.getUserId());
+
+        List<OrderItemDetailResponse> detailedItems = order.getOrderItems().stream()
+                .map(item -> {
+                    ProductDTO product = productRequest.getProductById(item.getProductId());
+
+                    return OrderItemDetailResponse.builder()
+                            .productId(item.getProductId())
+                            .productName(product.getName())
+                            .productDescription(product.getDescription())
+                            .productCategory(product.getCategory())
+                            .quantity(item.getQuantity())
+                            .unitPrice(item.getUnitPrice())
+                            .totalPrice(item.getTotalPrice())
+                            .build();
+                })
+                .toList();
+
+        String userName = ((user.getFirstName() == null ? "" : user.getFirstName()) + " "
+                + (user.getLastName() == null ? "" : user.getLastName())).trim();
+        if (userName.isBlank()) {
+            userName = user.getUsername();
+        }
+
+        return OrderDetailResponse.builder()
+                .id(order.getId())
+                .userId(order.getUserId())
+                .orderNumber(order.getOrderNumber())
+                .status(order.getStatus().name())
+                .totalAmount(order.getTotalAmount())
+                .orderItems(detailedItems)
+                .userName(userName)
+                .userEmail(user.getEmail())
+                .createdAt(order.getCreatedAt())
+                .updatedAt(order.getUpdatedAt())
+                .build();
     }
 
     public OrderResponse getOrderById(Long orderId) {

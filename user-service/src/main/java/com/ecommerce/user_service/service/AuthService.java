@@ -147,4 +147,11 @@ public class AuthService {
         return userRepository.findAll();
     }
 
+    public User getUserById(Long id) {
+        return userRepository.findById(id)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND,
+                        "User not found"));
+    }
+
 }

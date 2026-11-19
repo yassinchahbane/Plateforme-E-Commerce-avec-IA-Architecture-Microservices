@@ -29,7 +29,9 @@ public class ProductService {
 
     public ProductDTO getProductById(Long id){
         Product product = productRepository.findById(id)
-                .orElseThrow(()->new RuntimeException("Product not found: " + id));
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND,
+                        "Product not found: " + id));
         return toDTO(product);
     }
 

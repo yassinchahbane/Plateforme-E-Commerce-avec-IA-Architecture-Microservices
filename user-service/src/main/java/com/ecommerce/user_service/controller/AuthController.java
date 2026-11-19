@@ -61,4 +61,9 @@ public class AuthController {
     public ResponseEntity<List<User>> getAllUsers(){
         return ResponseEntity.ok(authService.getAllUsers());
     }
+
+    @GetMapping("/users/{id}")
+    public ResponseEntity<User> getUserById(@PathVariable Long id) {
+        return ResponseEntity.ok(authService.getUserById(id));
+    }
 }
