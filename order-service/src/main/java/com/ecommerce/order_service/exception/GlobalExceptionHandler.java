@@ -1,14 +1,24 @@
 package com.ecommerce.order_service.exception;
 
 import feign.FeignException;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.AmqpException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(AmqpException.class)
+    public ResponseEntity<String> rabbitMqUnavailable(AmqpException ex) {
+        log.error("RabbitMQ operation failed", ex);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body("RabbitMQ is unavailable; the message could not be published");
+    }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<String> duplicate(DataIntegrityViolationException ex) {

@@ -14,8 +14,10 @@ import com.ecommerce.order_service.exception.RessourceIntrouvableException;
 import com.ecommerce.order_service.model.Order;
 import com.ecommerce.order_service.model.OrderItem;
 import com.ecommerce.order_service.repository.OrderRepository;
+import com.ecommerce.order_service.event.OrderCreatedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +36,7 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final ProductRequest productRequest;
     private final UserRequest userRequest;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public OrderResponse createOrder(OrderRequest orderRequest, String idempotencyKey) {
@@ -94,7 +97,13 @@ public class OrderService {
         order.setOrderItems(orderItems);
 
         Order savedOrder = orderRepository.save(order);
-        
+
+        eventPublisher.publishEvent(new OrderCreatedEvent(
+                savedOrder.getId(),
+                savedOrder.getOrderNumber(),
+                savedOrder.getUserId(),
+                savedOrder.getTotalAmount()));
+
         log.info("Order created successfully with order number: {}", savedOrder.getOrderNumber());
         return convertToResponse(savedOrder);
     }
